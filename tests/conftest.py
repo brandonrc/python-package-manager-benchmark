@@ -6,8 +6,9 @@ import pytest
 import torch
 from PIL import Image
 
-# Ensure project root is on path for benchmark imports
+# Ensure project root and src/ are on path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
 class MockHFDataset:
