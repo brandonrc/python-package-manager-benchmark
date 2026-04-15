@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pixi/
+.venv*/
+*.onnx
+*.png
+outputs/
+lightning_logs/
+wandb/
+benchmark/results/*.json
+pixi.lock
+uv.lock
+poetry.lock
+.eggs/
