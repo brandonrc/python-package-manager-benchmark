@@ -27,6 +27,7 @@ dependencies:
       - timm>=0.9
       - onnx>=1.14
       - onnxruntime>=1.15
+      - onnxscript>=0.1
       - gradio>=4.0
       - torchmetrics>=1.0
       - safetensors>=0.3

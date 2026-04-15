@@ -237,7 +237,7 @@ TOOL_CONFIGS = {
         "install_cmd": ["poetry", "install", "--with", "test"],
         "run_tests_cmd": ["poetry", "run", "pytest", "tests/", "-v", "--timeout=60"],
         "clear_cache": lambda: subprocess.run(
-            ["poetry", "cache", "clear", "--all", "."], capture_output=True, input="yes\n"
+            ["poetry", "cache", "clear", "--all", "."], capture_output=True, text=True, input="yes\n"
         ),
         "clear_env": lambda: (
             shutil.rmtree(PROJECT_DIR / ".venv", ignore_errors=True),
