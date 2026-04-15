@@ -162,6 +162,17 @@ def _remove_mamba_env(env_name: str):
     )
 
 
+def _poetry_env_path() -> Path:
+    """Find poetry's virtualenv path (it stores venvs outside the project)."""
+    result = subprocess.run(
+        ["poetry", "env", "info", "--path"],
+        capture_output=True, text=True, cwd=PROJECT_DIR,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return Path(result.stdout.strip())
+    return PROJECT_DIR / ".venv"
+
+
 # ---------------------------------------------------------------------------
 # Tool configs
 # ---------------------------------------------------------------------------
@@ -209,7 +220,7 @@ TOOL_CONFIGS = {
         "supports_conda_forge": True,
     },
     "uv": {
-        "install_cmd": ["uv", "sync", "--all-extras"],
+        "install_cmd": ["uv", "sync", "--all-extras", "--python", "3.12"],
         "run_tests_cmd": ["uv", "run", "pytest", "tests/", "-v", "--timeout=60"],
         "clear_cache": lambda: subprocess.run(
             ["uv", "cache", "clean"], capture_output=True
@@ -243,7 +254,7 @@ TOOL_CONFIGS = {
             shutil.rmtree(PROJECT_DIR / ".venv", ignore_errors=True),
             subprocess.run(["poetry", "env", "remove", "--all"], capture_output=True, cwd=PROJECT_DIR),
         ),
-        "env_path": lambda: PROJECT_DIR / ".venv",
+        "env_path": lambda: _poetry_env_path(),
         "lockfile_cmd": ["poetry", "lock"],
         "lockfile_path": lambda: PROJECT_DIR / "poetry.lock",
         "supports_conda_forge": False,
@@ -251,17 +262,30 @@ TOOL_CONFIGS = {
 }
 
 
+def _find_python() -> str:
+    """Find a Python 3.11 or 3.12 interpreter."""
+    for candidate in ["python3.12", "python3.11", "python3"]:
+        path = shutil.which(candidate)
+        if path:
+            result = subprocess.run([path, "--version"], capture_output=True, text=True)
+            version = result.stdout.strip()
+            if "3.11" in version or "3.12" in version:
+                return path
+    return sys.executable
+
+
 def _pip_install() -> tuple[float, bool, str]:
     """pip needs venv creation + install as two steps. Returns (elapsed, success, output)."""
     start = time.monotonic()
     venv_path = PROJECT_DIR / ".venv-pip"
+    python_bin = _find_python()
 
     r1 = subprocess.run(
-        [sys.executable, "-m", "venv", str(venv_path)],
+        [python_bin, "-m", "venv", str(venv_path)],
         cwd=PROJECT_DIR, capture_output=True, text=True,
     )
     if r1.returncode != 0:
-        return time.monotonic() - start, False, r1.stderr
+        return time.monotonic() - start, False, f"venv creation failed (using {python_bin}): " + r1.stderr
 
     pip_bin = venv_path / "bin" / "pip"
     r2 = subprocess.run(
@@ -311,7 +335,7 @@ def benchmark_installs(
                 result.cold_install.runs.append(elapsed)
                 print(f"    Run {i+1}: {elapsed:.1f}s")
             else:
-                result.notes.append(f"Cold install run {i+1} failed: {output[:200]}")
+                result.notes.append(f"Cold install run {i+1} failed: {output[:500]}")
                 print(f"    Run {i+1}: FAILED")
         result.cold_install.compute_median()
 
@@ -322,7 +346,7 @@ def benchmark_installs(
             result.warm_install.runs.append(elapsed)
             print(f"    Run {i+1}: {elapsed:.1f}s")
         else:
-            result.notes.append(f"Warm install run {i+1} failed: {output[:200]}")
+            result.notes.append(f"Warm install run {i+1} failed: {output[:500]}")
             print(f"    Run {i+1}: FAILED")
     result.warm_install.compute_median()
 
@@ -352,7 +376,7 @@ def benchmark_lockfile(tool_name: str, config: dict, result: BenchmarkResult, nu
             result.lockfile_gen.runs.append(elapsed)
             print(f"    Run {i+1}: {elapsed:.1f}s")
         else:
-            result.notes.append(f"Lockfile run {i+1} failed: {output[:200]}")
+            result.notes.append(f"Lockfile run {i+1} failed: {output[:500]}")
             print(f"    Run {i+1}: FAILED")
     result.lockfile_gen.compute_median()
 
@@ -366,7 +390,7 @@ def benchmark_tests(tool_name: str, config: dict, result: BenchmarkResult, num_r
             result.test_execution.runs.append(elapsed)
             print(f"    Run {i+1}: {elapsed:.1f}s")
         else:
-            result.notes.append(f"Test run {i+1} failed: {output[:200]}")
+            result.notes.append(f"Test run {i+1} failed: {output[:500]}")
             print(f"    Run {i+1}: FAILED")
     result.test_execution.compute_median()
 
