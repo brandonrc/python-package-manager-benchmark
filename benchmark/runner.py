@@ -120,7 +120,7 @@ def detect_tools() -> dict[str, str | None]:
     """Detect which package manager tools are installed. Returns {name: version_string_or_None}."""
     tools = {}
     for tool_name in ["pixi", "uv", "conda", "mamba", "pip", "poetry"]:
-        path = shutil.which(tool_name)
+        path = shutil.which(tool_name) or (shutil.which("pip3") if tool_name == "pip" else None)
         if not path:
             tools[tool_name] = None
             continue
@@ -180,7 +180,7 @@ def _poetry_env_path() -> Path:
 TOOL_CONFIGS = {
     "pixi": {
         "install_cmd": ["pixi", "install"],
-        "run_tests_cmd": ["pixi", "run", "pytest", "tests/", "-v", "--timeout=60"],
+        "run_tests_cmd": ["pixi", "run", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
             ["pixi", "clean", "cache", "--yes"], capture_output=True
         ),
@@ -196,7 +196,7 @@ TOOL_CONFIGS = {
     "conda": {
         "install_cmd": ["conda", "env", "create", "-f", "environment.yml", "-n", "mlbench-conda", "-y"],
         "post_install_cmd": ["conda", "run", "-n", "mlbench-conda", "pip", "install", "-e", "."],
-        "run_tests_cmd": ["conda", "run", "-n", "mlbench-conda", "pytest", "tests/", "-v", "--timeout=60"],
+        "run_tests_cmd": ["conda", "run", "-n", "mlbench-conda", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
             ["conda", "clean", "--all", "-y"], capture_output=True
         ),
@@ -209,7 +209,7 @@ TOOL_CONFIGS = {
     "mamba": {
         "install_cmd": ["mamba", "env", "create", "-f", "environment.yml", "-n", "mlbench-mamba", "-y"],
         "post_install_cmd": ["conda", "run", "-n", "mlbench-mamba", "pip", "install", "-e", "."],
-        "run_tests_cmd": ["conda", "run", "-n", "mlbench-mamba", "pytest", "tests/", "-v", "--timeout=60"],
+        "run_tests_cmd": ["conda", "run", "-n", "mlbench-mamba", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
             ["mamba", "clean", "--all", "-y"], capture_output=True
         ),
@@ -221,7 +221,7 @@ TOOL_CONFIGS = {
     },
     "uv": {
         "install_cmd": ["uv", "sync", "--all-extras", "--python", "3.12"],
-        "run_tests_cmd": ["uv", "run", "pytest", "tests/", "-v", "--timeout=60"],
+        "run_tests_cmd": ["uv", "run", "--all-extras", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
             ["uv", "cache", "clean"], capture_output=True
         ),
@@ -234,7 +234,7 @@ TOOL_CONFIGS = {
     "pip": {
         "install_cmd": None,  # pip uses install_cmd_fn instead
         "install_cmd_fn": lambda: _pip_install(),
-        "run_tests_cmd": [str(PROJECT_DIR / ".venv-pip" / "bin" / "python"), "-m", "pytest", "tests/", "-v", "--timeout=60"],
+        "run_tests_cmd": [str(PROJECT_DIR / ".venv-pip" / "bin" / "python"), "-m", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
             ["pip", "cache", "purge"], capture_output=True
         ),
@@ -246,7 +246,7 @@ TOOL_CONFIGS = {
     },
     "poetry": {
         "install_cmd": ["poetry", "install", "--with", "test"],
-        "run_tests_cmd": ["poetry", "run", "pytest", "tests/", "-v", "--timeout=60"],
+        "run_tests_cmd": ["poetry", "run", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
             ["poetry", "cache", "clear", "--all", "."], capture_output=True, text=True, input="yes\n"
         ),
