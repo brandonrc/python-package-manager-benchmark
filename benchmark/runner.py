@@ -164,12 +164,19 @@ def _remove_mamba_env(env_name: str):
 
 def _poetry_env_path() -> Path:
     """Find poetry's virtualenv path (it stores venvs outside the project)."""
+    # Try poetry env info first
     result = subprocess.run(
         ["poetry", "env", "info", "--path"],
         capture_output=True, text=True, cwd=PROJECT_DIR,
     )
     if result.returncode == 0 and result.stdout.strip():
         return Path(result.stdout.strip())
+    # Fallback: scan poetry's cache directory for mlbench envs
+    cache_dir = Path.home() / ".cache" / "pypoetry" / "virtualenvs"
+    if cache_dir.exists():
+        matches = list(cache_dir.glob("mlbench-*"))
+        if matches:
+            return matches[0]
     return PROJECT_DIR / ".venv"
 
 
