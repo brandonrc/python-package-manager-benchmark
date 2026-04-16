@@ -72,9 +72,10 @@ def export_onnx(
         dummy_input,
         output_path,
         export_params=True,
-        opset_version=17,
+        opset_version=13,
         input_names=["input"],
         output_names=["output"],
         dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
+        dynamo=False,
     )
     return output_path
