@@ -245,7 +245,8 @@ TOOL_CONFIGS = {
         "supports_conda_forge": False,
     },
     "poetry": {
-        "install_cmd": ["poetry", "install", "--with", "test"],
+        "install_cmd": ["poetry", "lock"],
+        "post_install_cmd": ["poetry", "install", "--with", "test"],
         "run_tests_cmd": ["poetry", "run", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
             ["poetry", "cache", "clear", "--all", "."], capture_output=True, text=True, input="yes\n"
@@ -253,6 +254,7 @@ TOOL_CONFIGS = {
         "clear_env": lambda: (
             shutil.rmtree(PROJECT_DIR / ".venv", ignore_errors=True),
             subprocess.run(["poetry", "env", "remove", "--all"], capture_output=True, cwd=PROJECT_DIR),
+            (PROJECT_DIR / "poetry.lock").unlink(missing_ok=True),
         ),
         "env_path": lambda: _poetry_env_path(),
         "lockfile_cmd": ["poetry", "lock"],
