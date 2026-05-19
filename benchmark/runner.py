@@ -201,7 +201,11 @@ TOOL_CONFIGS = {
         "supports_conda_forge": True,
     },
     "conda": {
-        "install_cmd": ["conda", "env", "create", "-f", "environment.yml", "-n", "mlbench-conda", "-y"],
+        "pre_install_cmds": [
+            ["conda", "config", "--append", "channels", "conda-pypi"],
+            ["conda", "config", "--set", "solver", "rattler"],
+        ],
+        "install_cmd": ["conda", "create", "-f", "environment.yml", "-n", "mlbench-conda", "-y"],
         "post_install_cmd": ["conda", "run", "-n", "mlbench-conda", "pip", "install", "-e", "."],
         "run_tests_cmd": ["conda", "run", "-n", "mlbench-conda", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
@@ -318,6 +322,9 @@ def _run_install(config: dict, cold: bool) -> tuple[float, bool, str]:
     # pip has a custom install function
     if "install_cmd_fn" in config:
         return config["install_cmd_fn"]()
+
+    for pre_cmd in config.get("pre_install_cmds", []):
+        subprocess.run(pre_cmd, capture_output=True)
 
     elapsed, success, output = time_command(config["install_cmd"])
     if success and "post_install_cmd" in config:
