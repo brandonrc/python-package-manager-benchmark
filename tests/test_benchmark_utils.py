@@ -2,7 +2,9 @@ import json
 import os
 from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 
+import benchmark.runner as runner
 from benchmark.runner import (
     get_system_info,
     measure_dir_size,
@@ -12,6 +14,9 @@ from benchmark.runner import (
     TimingResult,
     SolverStressResult,
     TOOL_CONFIGS,
+    _parse_conda_version,
+    _version_at_least,
+    _conda_pypi_preflight,
 )
 
 
@@ -107,3 +112,86 @@ def test_tool_configs_has_all_tools():
         assert "clear_env" in config
         assert "env_path" in config
         assert "supports_conda_forge" in config
+
+
+# --- conda-pypi support -----------------------------------------------------
+
+def test_parse_conda_version():
+    assert _parse_conda_version("conda 26.5.2") == (26, 5, 2)
+    assert _parse_conda_version("conda 26.1.1") == (26, 1, 1)
+    assert _parse_conda_version("26.5") == (26, 5, 0)
+
+
+def test_version_at_least():
+    assert _version_at_least((26, 5, 2), (26, 5)) is True
+    assert _version_at_least((26, 5, 0), (26, 5)) is True
+    assert _version_at_least((27, 0, 0), (26, 5)) is True
+    assert _version_at_least((26, 4, 9), (26, 5)) is False
+    assert _version_at_least((26, 1, 1), (26, 5)) is False
+
+
+def _fake_run_factory(version_out, base_list_out):
+    """Build a fake subprocess.run that answers conda --version and conda list."""
+    def fake_run(cmd, *args, **kwargs):
+        if cmd[:2] == ["conda", "--version"]:
+            return SimpleNamespace(returncode=0, stdout=version_out, stderr="")
+        if cmd[:3] == ["conda", "list", "-n"]:
+            return SimpleNamespace(returncode=0, stdout=base_list_out, stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    return fake_run
+
+
+def test_preflight_fails_on_old_conda(monkeypatch):
+    monkeypatch.setattr(
+        runner.subprocess, "run",
+        _fake_run_factory("conda 26.1.1\n", "conda-pypi 0.9.0\nconda-rattler-solver 0.1.0\n"),
+    )
+    ok, reason = _conda_pypi_preflight()
+    assert ok is False
+    assert "26.1.1" in reason and "26.5" in reason
+
+
+def test_preflight_fails_when_rattler_missing(monkeypatch):
+    monkeypatch.setattr(
+        runner.subprocess, "run",
+        _fake_run_factory("conda 26.5.2\n", "conda-pypi 0.9.0\nlibmamba 2.5.0\n"),
+    )
+    ok, reason = _conda_pypi_preflight()
+    assert ok is False
+    assert "rattler" in reason.lower()
+
+
+def test_preflight_passes_when_ready(monkeypatch):
+    monkeypatch.setattr(
+        runner.subprocess, "run",
+        _fake_run_factory("conda 26.5.2\n", "conda-pypi 0.9.0\nconda-rattler-solver 0.1.0\n"),
+    )
+    ok, reason = _conda_pypi_preflight()
+    assert ok is True
+
+
+def test_conda_pypi_config_present_and_isolated():
+    assert "conda-pypi" in TOOL_CONFIGS
+    cfg = TOOL_CONFIGS["conda-pypi"]
+    # Uses the rattler solver as a CLI flag (no global condarc mutation)
+    assert "--solver" in cfg["install_cmd"]
+    assert "rattler" in cfg["install_cmd"]
+    # Uses its own environment file and env name, not the conda baseline
+    assert "environment-pypi.yml" in cfg["install_cmd"]
+    assert "mlbench-conda-pypi" in cfg["install_cmd"]
+    # No global-config-mutating pre-steps
+    assert "pre_install_cmds" not in cfg
+    # Has a preflight gate
+    assert callable(cfg.get("preflight"))
+
+
+def test_conda_baseline_no_longer_mutates_global_config():
+    # Regression: the merged PR added global config mutation to the conda entry.
+    cfg = TOOL_CONFIGS["conda"]
+    assert "pre_install_cmds" not in cfg
+    assert cfg["install_cmd"][:3] == ["conda", "env", "create"]
+
+
+def test_detect_tools_includes_conda_pypi():
+    tools = detect_tools()
+    assert "conda-pypi" in tools

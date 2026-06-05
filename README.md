@@ -29,10 +29,40 @@ to stress the real-world pain of mixed-channel resolution.
 |------|-------------|------|----------------|
 | pixi | Yes | Yes | Yes (native) |
 | conda | Yes | Yes (via pip) | Partial |
+| conda-pypi | Yes | Yes (native wheels) | Yes (rattler solver) |
 | mamba | Yes | Yes (via pip) | Partial |
 | uv | No | Yes | PyPI-only |
 | pip | No | Yes | PyPI-only |
 | poetry | No | Yes | PyPI-only |
+
+`conda` and `conda-pypi` are benchmarked as **separate tools** so you can compare
+them side by side:
+
+- **conda** — the classic hybrid: conda-forge packages + `pip install` for the
+  PyPI-only ones (uses `environment.yml`).
+- **conda-pypi** — native PyPI-wheel installation through the
+  [conda-pypi](https://github.com/conda-incubator/conda-pypi) plugin and the
+  rattler solver (uses `environment-pypi.yml`).
+
+### conda-pypi requirements
+
+conda-pypi only runs when its prerequisites are present; otherwise the runner
+**skips it with a clear reason** (recorded in the result JSON) instead of failing
+cryptically. You need:
+
+- **conda >= 26.5** (older conda, including the version shipped by current
+  Miniforge, is too old). Update with:
+  ```bash
+  conda install -n base "conda>=26.5"
+  ```
+- The **conda-pypi** and **conda-rattler-solver** plugins in the base env:
+  ```bash
+  conda install -n base conda-pypi conda-rattler-solver
+  ```
+
+The rattler solver is selected per-command via `--solver rattler` and the
+conda-pypi channel lives in `environment-pypi.yml`, so the benchmark does **not**
+modify your global `~/.condarc`.
 
 ## Running Benchmarks
 

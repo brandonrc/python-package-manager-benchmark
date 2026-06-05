@@ -132,6 +132,11 @@ def detect_tools() -> dict[str, str | None]:
             tools[tool_name] = result.stdout.strip() or result.stderr.strip() or "unknown"
         except (subprocess.TimeoutExpired, FileNotFoundError):
             tools[tool_name] = "unknown"
+
+    # conda-pypi is not a separate binary; it rides on the conda CLI + plugins.
+    # Mark it available whenever conda is present (the preflight gate decides
+    # whether it can actually run).
+    tools["conda-pypi"] = tools.get("conda")
     return tools
 
 
@@ -153,6 +158,66 @@ def _remove_conda_env(env_name: str):
         ["conda", "env", "remove", "-n", env_name, "-y"],
         capture_output=True,
     )
+
+
+CONDA_PYPI_MIN_VERSION = (26, 5)
+
+
+def _parse_conda_version(version_str: str) -> tuple[int, int, int]:
+    """Parse a `conda --version` string (e.g. 'conda 26.5.2') into (major, minor, patch)."""
+    token = version_str.strip().split()[-1]  # 'conda 26.5.2' -> '26.5.2'
+    parts = [int(p) for p in token.split(".") if p.isdigit()]
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])  # type: ignore[return-value]
+
+
+def _version_at_least(version: tuple[int, ...], minimum: tuple[int, ...]) -> bool:
+    """True if `version` >= `minimum`, comparing only as many components as `minimum` has."""
+    return version[: len(minimum)] >= minimum
+
+
+def _conda_pypi_preflight() -> tuple[bool, str]:
+    """Check that the environment can actually run a conda-pypi benchmark.
+
+    conda-pypi needs conda >= 26.5 plus the conda-pypi and conda-rattler-solver
+    plugins in the base environment. When these are missing, the PR's setup
+    commands fail silently and the install dies with a cryptic solver error.
+    This returns (False, human-readable reason) so the runner can skip loudly
+    instead of recording an unexplained failure.
+    """
+    try:
+        ver_res = subprocess.run(
+            ["conda", "--version"], capture_output=True, text=True, timeout=30
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False, "conda not found on PATH"
+    if ver_res.returncode != 0:
+        return False, f"`conda --version` failed: {ver_res.stderr.strip()}"
+
+    version = _parse_conda_version(ver_res.stdout or ver_res.stderr)
+    if not _version_at_least(version, CONDA_PYPI_MIN_VERSION):
+        have = ".".join(str(n) for n in version)
+        need = ".".join(str(n) for n in CONDA_PYPI_MIN_VERSION)
+        return False, (
+            f"conda {have} < {need} required for conda-pypi. "
+            f"Update with: conda install -n base \"conda>={need}\""
+        )
+
+    list_res = subprocess.run(
+        ["conda", "list", "-n", "base"], capture_output=True, text=True
+    )
+    base_pkgs = list_res.stdout
+    missing = [
+        pkg for pkg in ("conda-pypi", "conda-rattler-solver")
+        if pkg not in base_pkgs
+    ]
+    if missing:
+        return False, (
+            f"missing base plugin(s): {', '.join(missing)}. "
+            f"Install with: conda install -n base {' '.join(missing)}"
+        )
+    return True, "ok"
 
 
 def _remove_mamba_env(env_name: str):
@@ -201,11 +266,7 @@ TOOL_CONFIGS = {
         "supports_conda_forge": True,
     },
     "conda": {
-        "pre_install_cmds": [
-            ["conda", "config", "--append", "channels", "conda-pypi"],
-            ["conda", "config", "--set", "solver", "rattler"],
-        ],
-        "install_cmd": ["conda", "create", "-f", "environment.yml", "-n", "mlbench-conda", "-y"],
+        "install_cmd": ["conda", "env", "create", "-f", "environment.yml", "-n", "mlbench-conda", "-y"],
         "post_install_cmd": ["conda", "run", "-n", "mlbench-conda", "pip", "install", "-e", "."],
         "run_tests_cmd": ["conda", "run", "-n", "mlbench-conda", "pytest", "tests/", "-v", "--timeout=300"],
         "clear_cache": lambda: subprocess.run(
@@ -216,6 +277,27 @@ TOOL_CONFIGS = {
         "lockfile_cmd": ["conda-lock", "-f", "environment.yml", "--lockfile", "conda-lock.yml"],
         "lockfile_path": lambda: PROJECT_DIR / "conda-lock.yml",
         "supports_conda_forge": True,
+    },
+    # conda-pypi: native PyPI-wheel installation via the conda-pypi plugin +
+    # rattler solver. Isolated by design — the rattler solver is selected with
+    # the `--solver` CLI flag and the conda-pypi channel lives in
+    # environment-pypi.yml, so NO global ~/.condarc mutation occurs (the merged
+    # PR mutated global config, which contaminated mamba/conda-lock and made
+    # re-runs non-reproducible). Requires conda >= 26.5 + conda-pypi +
+    # conda-rattler-solver, enforced by the preflight gate below.
+    "conda-pypi": {
+        "install_cmd": ["conda", "create", "--solver", "rattler", "-f", "environment-pypi.yml", "-n", "mlbench-conda-pypi", "-y"],
+        "post_install_cmd": ["conda", "run", "-n", "mlbench-conda-pypi", "conda", "pypi", "install", "-e", "."],
+        "run_tests_cmd": ["conda", "run", "-n", "mlbench-conda-pypi", "pytest", "tests/", "-v", "--timeout=300"],
+        "clear_cache": lambda: subprocess.run(
+            ["conda", "clean", "--all", "-y"], capture_output=True
+        ),
+        "clear_env": lambda: _remove_conda_env("mlbench-conda-pypi"),
+        "env_path": lambda: _conda_env_path("mlbench-conda-pypi"),
+        "lockfile_cmd": None,  # N/A: conda-lock doesn't understand conda-pypi yet
+        "lockfile_path": lambda: None,
+        "supports_conda_forge": True,
+        "preflight": lambda: _conda_pypi_preflight(),
     },
     "mamba": {
         "install_cmd": ["mamba", "env", "create", "-f", "environment.yml", "-n", "mlbench-mamba", "-y"],
@@ -322,9 +404,6 @@ def _run_install(config: dict, cold: bool) -> tuple[float, bool, str]:
     # pip has a custom install function
     if "install_cmd_fn" in config:
         return config["install_cmd_fn"]()
-
-    for pre_cmd in config.get("pre_install_cmds", []):
-        subprocess.run(pre_cmd, capture_output=True)
 
     elapsed, success, output = time_command(config["install_cmd"])
     if success and "post_install_cmd" in config:
@@ -513,6 +592,26 @@ def main():
         print(f"{'=' * 60}")
 
         config = TOOL_CONFIGS[tool_name]
+
+        # Preflight gate: skip loudly with a clear reason rather than producing
+        # an unexplained failure (e.g. conda < 26.5 for conda-pypi).
+        preflight = config.get("preflight")
+        if preflight:
+            ok, reason = preflight()
+            if not ok:
+                print(f"  SKIPPED: {reason}")
+                skipped = BenchmarkResult(
+                    tool=tool_name,
+                    timestamp=datetime.now().isoformat(),
+                    system=get_system_info(),
+                    supports_conda_forge=config["supports_conda_forge"],
+                    notes=[f"Preflight failed, benchmark skipped: {reason}"],
+                )
+                output_path = RESULTS_DIR / f"{tool_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                with open(output_path, "w") as f:
+                    json.dump(asdict(skipped), f, indent=2)
+                continue
+
         result = run_all_benchmarks(tool_name, config, args.runs, args.skip_cold, args.skip_solver)
 
         output_path = RESULTS_DIR / f"{tool_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
