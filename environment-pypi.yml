@@ -33,6 +33,10 @@ dependencies:
 - torchmetrics>=1.0
 - safetensors>=0.3
 - evaluate>=0.4
+# simsimd is a transitive dep that pip auto-resolves in the conda+pip baseline
+# but conda-forge resolution does not pull in implicitly. Listed explicitly so
+# the conda-pypi env is functionally equivalent to the conda baseline (tests pass).
+- simsimd
 # NOTE: the editable install of this project (`-e .`) is intentionally NOT here.
 # The conda-pypi benchmark performs it via `conda pypi install -e .` in
 # post_install_cmd (the conda-pypi-recommended editable-install path).
