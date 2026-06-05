@@ -33,4 +33,9 @@ dependencies:
       - torchmetrics>=1.0
       - safetensors>=0.3
       - evaluate>=0.4
+      # smolagents is PyPI-only (not on conda-forge). In the conda+pip baseline
+      # it is installed via pip; in environment-pypi.yml it is a top-level dep so
+      # conda-pypi must fetch it natively from PyPI. This is the one dependency
+      # that actually exercises conda-pypi's PyPI-wheel install path.
+      - smolagents>=1.0
       - -e .

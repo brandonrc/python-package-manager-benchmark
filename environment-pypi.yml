@@ -33,6 +33,11 @@ dependencies:
 - torchmetrics>=1.0
 - safetensors>=0.3
 - evaluate>=0.4
+# smolagents is PyPI-only (not on conda-forge). Listed as a top-level dep so the
+# rattler solver must satisfy it from the conda-pypi channel — i.e. fetch the
+# wheel natively from PyPI. This is the dependency that actually exercises
+# conda-pypi's reason for existing; every other dep here is on conda-forge.
+- smolagents>=1.0
 # simsimd is a transitive dep that pip auto-resolves in the conda+pip baseline
 # but conda-forge resolution does not pull in implicitly. Listed explicitly so
 # the conda-pypi env is functionally equivalent to the conda baseline (tests pass).
