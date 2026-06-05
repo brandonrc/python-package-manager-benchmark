@@ -274,7 +274,13 @@ TOOL_CONFIGS = {
         ),
         "clear_env": lambda: _remove_conda_env("mlbench-conda"),
         "env_path": lambda: _conda_env_path("mlbench-conda"),
-        "lockfile_cmd": ["conda-lock", "-f", "environment.yml", "--lockfile", "conda-lock.yml"],
+        # Native conda lockfile export (conda >= 26.5). Replaces standalone
+        # conda-lock, which cannot resolve modern CUDA wheels (it fails on the
+        # manylinux_2_27 tag for nvidia-cublas-cu12). Note: this serializes the
+        # already-installed env to a conda-lock.yml rather than solving the spec
+        # from scratch — a different (snapshot) operation than uv/pixi/poetry
+        # lock, which solve. See benchmark notes.
+        "lockfile_cmd": ["conda", "export", "-n", "mlbench-conda", "--file", "conda-lock.yml", "--format", "conda-lock-v1"],
         "lockfile_path": lambda: PROJECT_DIR / "conda-lock.yml",
         "supports_conda_forge": True,
     },
@@ -294,8 +300,9 @@ TOOL_CONFIGS = {
         ),
         "clear_env": lambda: _remove_conda_env("mlbench-conda-pypi"),
         "env_path": lambda: _conda_env_path("mlbench-conda-pypi"),
-        "lockfile_cmd": None,  # N/A: conda-lock doesn't understand conda-pypi yet
-        "lockfile_path": lambda: None,
+        # Native conda lockfile export of the installed env (see conda entry note).
+        "lockfile_cmd": ["conda", "export", "-n", "mlbench-conda-pypi", "--file", "conda-pypi-lock.yml", "--format", "conda-lock-v1"],
+        "lockfile_path": lambda: PROJECT_DIR / "conda-pypi-lock.yml",
         "supports_conda_forge": True,
         "preflight": lambda: _conda_pypi_preflight(),
     },
@@ -308,7 +315,8 @@ TOOL_CONFIGS = {
         ),
         "clear_env": lambda: _remove_mamba_env("mlbench-mamba"),
         "env_path": lambda: _conda_env_path("mlbench-mamba"),
-        "lockfile_cmd": ["conda-lock", "-f", "environment.yml", "--lockfile", "conda-lock-mamba.yml"],
+        # Native conda lockfile export of the installed env (see conda entry note).
+        "lockfile_cmd": ["conda", "export", "-n", "mlbench-mamba", "--file", "conda-lock-mamba.yml", "--format", "conda-lock-v1"],
         "lockfile_path": lambda: PROJECT_DIR / "conda-lock-mamba.yml",
         "supports_conda_forge": True,
     },
